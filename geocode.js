@@ -10,6 +10,7 @@ export async function geocodeStations(list) {
     try {
       const r = await fetch(s, { method: 'POST', body: 'data=' + encodeURIComponent(Q), headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'cercanias-app/0.1' } })
       els = (await r.json()).elements
+      console.log('Overpass', s, 'devolvió', els?.length ?? 0, 'estaciones')
       if (els?.length) break
     } catch (e) { console.log('Overpass falló en', s, e.message) }
   }

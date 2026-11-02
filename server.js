@@ -11,7 +11,14 @@ const last = new Map() // código -> { at, data }
 const joined = new Set()
 
 const conn = new signalR.HubConnectionBuilder()
-  .withUrl('https://info.adif.es/InfoStation', { skipNegotiation: true, transport: signalR.HttpTransportType.WebSockets })
+  .withUrl('https://info.adif.es/InfoStation', {
+    skipNegotiation: true,
+    transport: signalR.HttpTransportType.WebSockets,
+    headers: {
+      Origin: 'https://info.adif.es',
+      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
+    },
+  })
   .configureLogging(signalR.LogLevel.Error)
   .withAutomaticReconnect([0, 2000, 5000, 10000, 30000])
   .build()
@@ -31,9 +38,10 @@ async function join(code) {
   await conn.invoke('JoinInfo', code)
   await conn.invoke('GetLastMessage', code)
 }
+let adifError = null
 async function start() {
   try { await conn.start(); for (const c of joined) await join(c); console.log('Conectado a Adif') }
-  catch (e) { console.error('Sin conexión con Adif:', e.message); setTimeout(start, 10000) }
+  catch (e) { adifError = String(e.message).slice(0, 200); console.error('Sin conexión con Adif:', e.message); setTimeout(start, 10000) }
 }
 
 async function board(code) {
@@ -72,7 +80,7 @@ async function geo() {
   }
   geoState = 'error'
 }
-app.get('/api/status', (_q, r) => r.json({ adif: conn.state, coordenadas: geoState, estaciones: stations.length, conCoordenadas: stations.filter((x) => x.lat).length }))
+app.get('/api/status', (_q, r) => r.json({ adif: conn.state, errorAdif: adifError, coordenadas: geoState, estaciones: stations.length, conCoordenadas: stations.filter((x) => x.lat).length }))
 app.get('/api/stations', (_q, r) => r.json(stations))
 app.get('/api/board/:code', async (q, r) => {
   const m = await board(q.params.code)
