@@ -26,7 +26,8 @@ pre{white-space:pre-wrap;font-size:11px;color:var(--mut)}
 <script src="https://cdn.jsdelivr.net/npm/@microsoft/signalr@8.0.7/dist/browser/signalr.min.js"></script>
 <script>
 const $=s=>document.querySelector(s),norm=c=>String(c).replace(/^0+(?=\d)/,'');
-let stations=[],cur=null,adif='conectando',boards={};
+let stations=[],cur=null,adif='conectando',boards={},rx=0,lastErr='',lastCode='';const VER='v3';
+const diag=()=>`<div class="m" style="margin-top:8px">diagnóstico ${VER} · conexión: ${typeof conn!=='undefined'?conn.state:'-'} · mensajes recibidos: ${rx}${lastCode?' · última estación: '+lastCode:''}${lastErr?' · error: '+lastErr:''}</div>`;
 const esri={version:8,sources:{s:{type:'raster',tileSize:256,attribution:'Esri World Imagery',tiles:['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}']}},layers:[{id:'s',type:'raster',source:'s'}]};
 const osm={version:8,sources:{o:{type:'raster',tileSize:256,attribution:'© OpenStreetMap',tiles:['https://tile.openstreetmap.org/{z}/{x}/{y}.png']}},layers:[{id:'o',type:'raster',source:'o'}]};
 const map=new maplibregl.Map({container:'map',style:esri,center:[-3.7,40.42],zoom:9.5});let sat=true;
@@ -52,15 +53,16 @@ fetch('/api/stations').then(r=>r.json()).then(async l=>{stations=l;status('Busca
 
 // --- Adif (tiempo real, conexión directa desde el navegador) ---
 const conn=new signalR.HubConnectionBuilder().withUrl('https://info.adif.es/InfoStation',{skipNegotiation:true,transport:signalR.HttpTransportType.WebSockets}).withAutomaticReconnect().configureLogging(signalR.LogLevel.Error).build();
-conn.on('ReceiveMessage',raw=>{try{const d=JSON.parse(raw),c=norm(d?.station_settings?.code);if(!c)return;boards[c]={at:Date.now(),d};if(cur&&norm(cur.code)===c)render()}catch(e){}});
-const join=async code=>{const c='PRO-ECM-'+code;await conn.invoke('JoinInfo',c);await conn.invoke('GetLastMessage',c)};
+conn.on('ReceiveError',e=>{lastErr='ReceiveError '+JSON.stringify(e).slice(0,150);if(cur)render()});
+conn.on('ReceiveMessage',raw=>{rx++;try{const d=typeof raw==='string'?JSON.parse(raw):raw,c=norm(d?.station_settings?.code);lastCode=c||'sin código';if(!c){if(cur)render();return}boards[c]={at:Date.now(),d};if(cur&&norm(cur.code)===c)render()}catch(e){}});
+const join=async code=>{const c='PRO-ECM-'+code;try{await conn.invoke('JoinInfo',c);await conn.invoke('GetLastMessage',c)}catch(e){lastErr=String(e.message||e).slice(0,160);render()}};
 conn.onreconnected(()=>{if(cur)join(cur.code)});
-conn.start().then(()=>{adif='ok';if(cur)join(cur.code)}).catch(e=>{adif='error: '+e.message;if(cur)render()});
+conn.start().then(()=>{adif='ok';if(cur){render();join(cur.code)}}).catch(e=>{adif='error: '+e.message;if(cur)render()});
 
 const tl=t=>Object.entries(t).filter(([k])=>/time|hora|delay|retraso|eta|arriv|depart/i.test(k));
-let nodata;function openSt(s){cur=s;clearTimeout(nodata);nodata=setTimeout(()=>{if(cur===s&&!boards[norm(s.code)]&&adif==='ok')$('#panel').innerHTML=`<b>${s.name}</b><p class="m">Adif no envía datos para esta estación (puede no tener pantalla de trenes).</p>`},10000);if(s.lat)map.flyTo({center:[s.lon,s.lat],zoom:13});render();if(adif==='ok')join(s.code).catch(()=>{})}
+let nodata;function openSt(s){cur=s;clearTimeout(nodata);nodata=setTimeout(()=>{if(cur===s&&!boards[norm(s.code)]&&adif==='ok')$('#panel').innerHTML=`<b>${s.name}</b><p class="m">Adif no envía datos para esta estación (puede no tener pantalla de trenes).</p>${diag()}`},10000);if(s.lat)map.flyTo({center:[s.lon,s.lat],zoom:13});render();if(adif==='ok')join(s.code)}
 function render(){const p=$('#panel');p.style.display='block';const b=boards[norm(cur.code)];
- if(!b){p.innerHTML=`<b>${cur.name}</b><p class="m">${adif==='ok'?'Esperando datos de Adif… (si no llegan, esta estación puede no tener pantalla)':adif==='conectando'?'Conectando con Adif…':'No se pudo conectar con Adif. '+adif}</p>`;return}
+ if(!b){p.innerHTML=`<b>${cur.name}</b><p class="m">${adif==='ok'?'Esperando datos de Adif… (si no llegan, esta estación puede no tener pantalla)':adif==='conectando'?'Conectando con Adif…':'No se pudo conectar con Adif. '+adif}</p>${diag()}`;return}
  let tr=b.d.trains||[];const c=tr.filter(t=>t.traffic_type==='C');if(c.length)tr=c;
  p.innerHTML=`<b>${cur.name}</b> <span class="m">${new Date(b.at).toLocaleTimeString('es-ES')}</span>`+
  (tr.map(t=>{const d=t.destinations?.[0]||{};return`<div class="t"><div class="l">${(d.line||'·').replace(/ROD\w*|CER\w*/g,'')}</div><div>${d.name||d.station||'—'}<div class="m">${t.status??''}</div></div><div class="v">${tl(t).slice(0,2).map(x=>x[1]).join(' · ')}<div class="m">${t.platform?'vía '+String(t.platform).trim():''}</div></div></div>`}).join('')||'<p class="m">Sin trenes ahora mismo.</p>')+
