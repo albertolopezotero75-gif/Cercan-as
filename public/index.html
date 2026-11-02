@@ -1,0 +1,46 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Cercanías</title>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<style>
+:root{--bg:#16202A;--card:#1f2d3a;--tx:#e8eef3;--mut:#8ea0b0;--ok:#3ecf8e;--warn:#f5b942;--bad:#ef5b5b}
+*{box-sizing:border-box}html,body{height:100%;margin:0;background:var(--bg);color:var(--tx);font:15px system-ui,sans-serif}
+#map{position:absolute;inset:0}
+header{position:absolute;top:0;left:0;right:0;z-index:2;padding:calc(10px + env(safe-area-inset-top)) 12px 10px;background:linear-gradient(var(--bg),transparent)}
+h1{margin:0 0 8px;font-size:20px}
+input{width:100%;padding:10px 12px;border-radius:10px;border:0;background:var(--card);color:var(--tx);font-size:15px}
+#res{position:absolute;top:calc(92px + env(safe-area-inset-top));left:12px;right:12px;z-index:3;background:var(--card);border-radius:10px;max-height:40vh;overflow:auto;display:none}
+#res div{padding:10px 12px;border-bottom:1px solid #0003;cursor:pointer}
+#panel{position:absolute;left:0;right:0;bottom:0;z-index:3;max-height:55vh;overflow:auto;background:var(--card);border-radius:16px 16px 0 0;padding:14px 14px calc(14px + env(safe-area-inset-bottom));display:none}
+.t{display:flex;gap:10px;padding:8px 0;border-top:1px solid #0003}.l{min-width:44px;font-weight:700}.m{color:var(--mut);font-size:13px}
+.v{margin-left:auto;text-align:right}.btn{position:absolute;right:12px;top:calc(104px + env(safe-area-inset-top));z-index:2;background:var(--card);color:var(--tx);border:0;border-radius:8px;padding:6px 10px}
+</style></head><body>
+<div id="map"></div>
+<header><h1>Cercanías · Madrid</h1><input id="q" placeholder="Busca tu estación…" autocomplete="off"></header>
+<button class="btn" id="sw">Satélite</button>
+<div id="res"></div><div id="panel"></div>
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script>
+const $=s=>document.querySelector(s);let stations=[],timer;
+const esri={version:8,sources:{s:{type:'raster',tileSize:256,attribution:'Esri World Imagery',tiles:['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}']}},layers:[{id:'s',type:'raster',source:'s'}]};
+const osm={version:8,sources:{o:{type:'raster',tileSize:256,attribution:'© OpenStreetMap',tiles:['https://tile.openstreetmap.org/{z}/{x}/{y}.png']}},layers:[{id:'o',type:'raster',source:'o'}]};
+const map=new maplibregl.Map({container:'map',style:esri,center:[-3.7,40.42],zoom:9.5});let sat=true;
+$('#sw').onclick=()=>{sat=!sat;map.setStyle(sat?esri:osm);$('#sw').textContent=sat?'Satélite':'Mapa'};
+const placed=new Set();let tries=0;
+function loadStations(){fetch('/api/stations').then(r=>r.json()).then(l=>{stations=l;
+ l.filter(s=>s.lat&&!placed.has(s.code)).forEach(s=>{placed.add(s.code);
+ const e=document.createElement('div');e.style.cssText='width:12px;height:12px;border-radius:50%;background:#e30613;border:2px solid #fff;cursor:pointer';
+ e.onclick=()=>open(s);new maplibregl.Marker({element:e}).setLngLat([s.lon,s.lat]).addTo(map)});
+ if(!placed.size&&tries++<30)setTimeout(loadStations,5000)})}
+loadStations();
+$('#q').oninput=e=>{const v=e.target.value.toLowerCase();const r=$('#res');
+ const m=v?stations.filter(s=>s.name.toLowerCase().includes(v)).slice(0,12):[];
+ r.style.display=m.length?'block':'none';r.innerHTML='';m.forEach(s=>{const d=document.createElement('div');d.textContent=s.name;d.onclick=()=>{r.style.display='none';open(s)};r.appendChild(d)})};
+function open(s){if(s.lat)map.flyTo({center:[s.lon,s.lat],zoom:13});clearInterval(timer);load(s);timer=setInterval(()=>load(s),20000)}
+async function load(s){const p=$('#panel');p.style.display='block';
+ try{const r=await fetch('/api/board/'+s.code);const j=await r.json();
+  if(!r.ok){p.innerHTML=`<b>${s.name}</b><p class="m">${j.error}</p>`;return}
+  p.innerHTML=`<b>${s.name}</b> <span class="m">actualizado ${new Date(j.updated).toLocaleTimeString('es-ES')}</span>`+
+  (j.trains.map(t=>`<div class="t"><div class="l">${t.line||'·'}</div><div>${t.destination||'—'}<div class="m">${t.status||''}</div></div><div class="v">${Object.values(t.times).slice(0,2).join(' · ')}<div class="m">${t.platform?'vía '+t.platform:''}</div></div></div>`).join('')||'<p class="m">Sin trenes de Cercanías ahora mismo.</p>')
+ }catch(e){p.innerHTML='<p class="m">No se pudo cargar.</p>'}}
+</script></body></html>

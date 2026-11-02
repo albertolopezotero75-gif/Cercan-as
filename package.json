@@ -1,0 +1,8 @@
+{
+  "name": "cercanias",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": { "start": "node server.js", "geocode": "node scripts/geocode.mjs" },
+  "engines": { "node": ">=20" },
+  "dependencies": { "@microsoft/signalr": "^8.0.7", "express": "^4.21.2", "ws": "^8.18.0" }
+}
