@@ -53,12 +53,12 @@ fetch('/api/stations').then(r=>r.json()).then(async l=>{stations=l;status('Busca
 // --- Adif (tiempo real, conexión directa desde el navegador) ---
 const conn=new signalR.HubConnectionBuilder().withUrl('https://info.adif.es/InfoStation',{skipNegotiation:true,transport:signalR.HttpTransportType.WebSockets}).withAutomaticReconnect().configureLogging(signalR.LogLevel.Error).build();
 conn.on('ReceiveMessage',raw=>{try{const d=JSON.parse(raw),c=norm(d?.station_settings?.code);if(!c)return;boards[c]={at:Date.now(),d};if(cur&&norm(cur.code)===c)render()}catch(e){}});
-const join=async code=>{await conn.invoke('JoinInfo',code);await conn.invoke('GetLastMessage',code)};
+const join=async code=>{const c='PRO-ECM-'+code;await conn.invoke('JoinInfo',c);await conn.invoke('GetLastMessage',c)};
 conn.onreconnected(()=>{if(cur)join(cur.code)});
 conn.start().then(()=>{adif='ok';if(cur)join(cur.code)}).catch(e=>{adif='error: '+e.message;if(cur)render()});
 
 const tl=t=>Object.entries(t).filter(([k])=>/time|hora|delay|retraso|eta|arriv|depart/i.test(k));
-function openSt(s){cur=s;if(s.lat)map.flyTo({center:[s.lon,s.lat],zoom:13});render();if(adif==='ok')join(s.code).catch(()=>{})}
+let nodata;function openSt(s){cur=s;clearTimeout(nodata);nodata=setTimeout(()=>{if(cur===s&&!boards[norm(s.code)]&&adif==='ok')$('#panel').innerHTML=`<b>${s.name}</b><p class="m">Adif no envía datos para esta estación (puede no tener pantalla de trenes).</p>`},10000);if(s.lat)map.flyTo({center:[s.lon,s.lat],zoom:13});render();if(adif==='ok')join(s.code).catch(()=>{})}
 function render(){const p=$('#panel');p.style.display='block';const b=boards[norm(cur.code)];
  if(!b){p.innerHTML=`<b>${cur.name}</b><p class="m">${adif==='ok'?'Esperando datos de Adif… (si no llegan, esta estación puede no tener pantalla)':adif==='conectando'?'Conectando con Adif…':'No se pudo conectar con Adif. '+adif}</p>`;return}
  let tr=b.d.trains||[];const c=tr.filter(t=>t.traffic_type==='C');if(c.length)tr=c;
